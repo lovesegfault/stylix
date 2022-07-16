@@ -142,15 +142,19 @@ impl<P: Clone> Palette<P> {
 impl Palette<Lab> {
     fn fitness(&self, polarity: &Polarity) -> NotNan<f32> {
         let primary_similarity =
-            self.primary().iter()
-            .cartesian_product(self.primary().iter())
-            .map(|(a, b)| NotNan::new(a.get_color_difference(b)).unwrap())
+            self.primary().iter().combinations(2)
+            .map(|pair| match pair[..] {
+                [a, b] => NotNan::new(a.get_color_difference(b)).unwrap(),
+                _ => panic!("Expected a vector of 2 elements")
+            })
             .max().unwrap();
 
         let accent_difference =
-            self.accent().iter()
-            .cartesian_product(self.accent().iter())
-            .map(|(a, b)| NotNan::new(a.get_color_difference(b)).unwrap())
+            self.accent().iter().combinations(2)
+            .map(|pair| match pair[..] {
+                [a, b] => NotNan::new(a.get_color_difference(b)).unwrap(),
+                _ => panic!("Expected a vector of 2 elements")
+            })
             .min().unwrap();
 
         let lightness_error = polarity.lightness_error(self);
