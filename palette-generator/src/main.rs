@@ -39,7 +39,7 @@ const SURVIVORS: usize = 100;
 // Chance of a color being randomised between generations.
 const MUTATION_PROBABILITY: f32 = 0.1;
 // When the fitness score improves by less than this value, terminate the algorithm.
-const CHANGE_THRESHOLD: f32 = 0.01;
+const IMPROVEMENT_THRESHOLD: f32 = 0.01;
 
 quick_error! {
     #[derive(Debug)]
@@ -159,15 +159,10 @@ impl Palette<Lab> {
     }
 }
 
-fn grow_population<R: Rng, P: Clone>(
-    rng: &mut R,
-    survivors: &[Palette<P>]
-) -> Vec<Palette<P>> {
-    let mut population = Vec::with_capacity(POPULATION_SIZE);
-
+fn grow_population<R: Rng, P: Clone>(rng: &mut R, population: &mut Vec<Palette<P>>) {
     while population.len() < POPULATION_SIZE {
-        let parent_a = survivors.choose(rng).unwrap();
-        let parent_b = survivors.choose(rng).unwrap();
+        let parent_a = population[..SURVIVORS].choose(rng).unwrap();
+        let parent_b = population[..SURVIVORS].choose(rng).unwrap();
 
         // Randomly select colours from either parent
         let child = Palette(
@@ -179,8 +174,6 @@ fn grow_population<R: Rng, P: Clone>(
 
         population.push(child);
     }
-
-    population
 }
 
 fn mutate_population<R: Rng, P: Clone>(
@@ -197,30 +190,48 @@ fn mutate_population<R: Rng, P: Clone>(
     }
 }
 
+fn print_stats(generation_number: usize, max_fitness: f32, improvement: f32) {
+    if generation_number == 0 {
+        // The improvement is irrelevant for the first generation
+        eprintln!("Generation: {:3}  Best fitness: {:7.2}", generation_number, max_fitness);
+    } else {
+        let percentage_improvement = improvement * 100.0;
+        eprintln!(
+            "Generation: {:3}  Best fitness: {:7.2}  Improvement: {:5.1}%",
+            generation_number, max_fitness, percentage_improvement
+        );
+    }
+}
+
 fn evolve_population<R: Rng>(
     polarity: &Polarity,
     pixels: &[Lab],
     rng: &mut R,
-    mut population: Vec<Palette<Lab>>,
-    old_max_fitness: NotNan<f32>
+    mut population: Vec<Palette<Lab>>
 ) -> Vec<Palette<Lab>> {
-    population.sort_by_cached_key(|palette| palette.fitness(polarity));
+    let mut old_max_fitness = -f32::INFINITY;
+    let mut generation_number = 0;
 
-    let max_fitness = population.last().unwrap().fitness(polarity);
+    loop {
+        // Fitness is made negative to reverse the sort order,
+        // so that the best palettes are at the start of the vector
+        population.sort_by_cached_key(|palette| -palette.fitness(polarity));
 
-    let change = NotNan::new(1.0).unwrap() - (max_fitness / old_max_fitness);
-    if change < NotNan::new(CHANGE_THRESHOLD).unwrap() {
-        eprintln!("Stopping with fitness {}", max_fitness);
+        let max_fitness = population[0].fitness(polarity).into_inner();
+        let improvement = 1.0 - (max_fitness / old_max_fitness);
+        old_max_fitness = max_fitness;
 
-        population
-    } else {
-        eprintln!("Continuing with fitness {}", max_fitness);
+        print_stats(generation_number, max_fitness, improvement);
 
-        let survivors = population.split_off(population.len() - SURVIVORS);
-        let mut new_population = grow_population(rng, &survivors);
-        mutate_population(pixels, rng, &mut new_population);
+        if improvement < IMPROVEMENT_THRESHOLD {
+            return population;
+        } else {
+            population.truncate(SURVIVORS);
+            grow_population(rng, &mut population);
+            mutate_population(pixels, rng, &mut population);
+        }
 
-        evolve_population(polarity, pixels, rng, new_population, max_fitness)
+        generation_number += 1;
     }
 }
 
@@ -248,10 +259,7 @@ pub fn generate(polarity: &Polarity, image_path: &str) -> Result<Palette<Lab>, E
         .map(|_| Palette::create_random(&mut rng, &pixels))
         .collect();
 
-    let mut population = evolve_population(
-        polarity, &pixels, &mut rng, initial_population,
-        NotNan::new(-f32::INFINITY).unwrap()
-    );
+    let mut population = evolve_population(polarity, &pixels, &mut rng, initial_population);
 
     Ok(population.pop().unwrap())
 }
