@@ -181,7 +181,8 @@ fn mutate_population<R: Rng, P: Clone>(
     rng: &mut R,
     population: &mut [Palette<P>]
 ) {
-    for palette in population.iter_mut() {
+    // Survivors are excluded from mutation so that we don't lose the best palette
+    for palette in population[SURVIVORS..].iter_mut() {
         for pixel in palette.0.iter_mut() {
             if rng.gen::<f32>() < MUTATION_PROBABILITY {
                 *pixel = (*pixels.choose(rng).unwrap()).clone();
